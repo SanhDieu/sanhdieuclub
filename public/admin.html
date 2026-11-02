@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin - SanhDieu.Club</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #101827;
+      color: #f3f4f6;
+      font: 16px Arial, sans-serif;
+    }
+
+    main {
+      max-width: 760px;
+      margin: auto;
+    }
+
+    .panel {
+      background: #1c293b;
+      border: 1px solid #34445b;
+      border-radius: 14px;
+      padding: 22px;
+      margin: 16px 0;
+    }
+
+    input,
+    select,
+    button {
+      width: 100%;
+      padding: 12px;
+      margin: 7px 0 14px;
+      border-radius: 8px;
+      border: 1px solid #475569;
+      font-size: 15px;
+    }
+
+    input,
+    select {
+      background: #101827;
+      color: white;
+    }
+
+    button {
+      background: #2563eb;
+      color: white;
+      border: 0;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button:disabled {
+      opacity: .6;
+      cursor: wait;
+    }
+
+    .muted {
+      color: #b6c2d2;
+    }
+
+    .status {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .user {
+      padding: 12px;
+      border-bottom: 1px solid #34445b;
+      cursor: pointer;
+    }
+
+    .user:hover {
+      background: #293a51;
+    }
+
+    .danger {
+      background: #a83232;
+    }
+
+    code {
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>🛡️ SanhDieu Admin</h1>
+    <p class="muted">Quản lý điểm người chơi</p>
+
+    <section class="panel">
+      <h2>1. Tìm người chơi</h2>
+      <label for="search">Username</label>
+      <input id="search" placeholder="Nhập username, ví dụ player123">
+      <button id="searchBtn">Tìm tài khoản</button>
+      <div id="results"></div>
+    </section>
+
+    <section class="panel">
+      <h2>2. Chỉnh điểm</h2>
+      <p>Người chơi được chọn: <strong id="selected">Chưa chọn</strong></p>
+      <p>Điểm hiện tại: <strong id="current">—</strong></p>
+
+      <label for="action">Thao tác</label>
+      <select id="action">
+      <option value="add">Cộng điểm</option>
+      <option value="subtract">Trừ điểm</option>
+      <option value="set">Đặt thành số điểm mới</option>
+    </select>
+
+      <label for="amount">Số điểm</label>
+      <input id="amount" type="number" min="0" step="1" value="100">
+
+      <label for="confirm">Nhập lại chính xác username để xác nhận</label>
+      <input id="confirm" autocomplete="off" placeholder="Username xác nhận">
+
+      <button id="applyBtn" disabled>Xác nhận thay đổi điểm</button>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section class="panel">
+      <h2>3. Lịch sử chỉnh điểm</h2>
+      <button id="logsBtn">Tải lịch sử</button>
+      <div id="logs"></div>
+    </section>
+  </main>
+
+  <script>
+    let selectedUser = null;
+
+  const $ = id => document.getElementById(id);
+
+  async function api(url, options = {}) {
+    const response = await fetch(url, {
+      credentials: 'same-origin',
+      ...options,
+      headers: {
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers
+      }
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || `Lỗi HTTP ${response.status}`);
+    }
+
+    return data;
+  }
+
+  $('searchBtn').addEventListener('click', async () => {
+    const q = $('search').value.trim();
+    if (!q) return alert('Nhập username cần tìm.');
+
+    $('results').textContent = 'Đang tìm...';
+
+    try {
+      const data = await api(
+        '/api/admin/users?q=' + encodeURIComponent(q)
+      );
+
+      $('results').replaceChildren();
+
+      if (!data.users.length) {
+        $('results').textContent = 'Không tìm thấy tài khoản.';
+        return;
+      }
+
+      data.users.forEach(user => {
+        const item = document.createElement('div');
+        item.className = 'user';
+        item.textContent =
+          user.username + ' — ' + user.points + ' điểm';
+
+        item.addEventListener('click', () => {
+          selectedUser = user.username;
+          $('selected').textContent = user.username;
+          $('current').textContent = user.points;
+          $('confirm').value = '';
+          $('applyBtn').disabled = false;
+          $('status').textContent = '';
+        });
+
+        $('results').appendChild(item);
+      });
+    } catch (error) {
+      $('results').textContent = error.message;
+    }
+  });
+
+  $('applyBtn').addEventListener('click', async () => {
+    if (!selectedUser) return alert('Hãy chọn người chơi trước.');
+
+    const amount = Number($('amount').value);
+    const action = $('action').value;
+
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      return alert('Số điểm phải là số nguyên không âm.');
+    }
+
+    if ($('confirm').value !== selectedUser) {
+      return alert('Username xác nhận chưa khớp.');
+    }
+
+    const actionName = {
+      add: 'cộng',
+      subtract: 'trừ',
+      set: 'đặt lại'
+    }[action];
+
+    if (!confirm(
+      `Bạn chắc chắn muốn ${actionName} điểm cho ${selectedUser}?`
+    )) return;
+
+    $('applyBtn').disabled = true;
+
+    try {
+      const data = await api('/api/admin/user-points', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: selectedUser,
+          action,
+          amount,
+          confirm: $('confirm').value
+        })
+      });
+
+      $('current').textContent = data.newPoints;
+      $('status').textContent =
+        `Thành công! ${data.username}: ${data.oldPoints} → ${data.newPoints} điểm.`;
+
+      $('confirm').value = '';
+      $('searchBtn').click();
+    } catch (error) {
+      $('status').textContent = 'Không thành công: ' + error.message;
+    } finally {
+      $('applyBtn').disabled = false;
+    }
+  });
+
+  $('logsBtn').addEventListener('click', async () => {
+    $('logs').textContent = 'Đang tải...';
+
+    try {
+      const data = await api('/api/admin/logs');
+      $('logs').replaceChildren();
+
+      if (!data.logs.length) {
+        $('logs').textContent = 'Chưa có lịch sử.';
+        return;
+      }
+
+      data.logs.forEach(log => {
+        const item = document.createElement('p');
+        item.textContent =
+          `${log.created_at} | Admin ${log.admin_username} | ` +
+          `${log.target_username} | ${log.action} | ` +
+          `${log.old_points} → ${log.new_points}`;
+        $('logs').appendChild(item);
+      });
+    } catch (error) {
+      $('logs').textContent = error.message;
+    }
+  });
+  </script>
+</body>
+
+</html>
